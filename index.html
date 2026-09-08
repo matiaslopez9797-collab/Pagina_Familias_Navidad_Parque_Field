@@ -158,15 +158,18 @@ $('acceptConsent').onclick=async()=>{
     audit:await getAudit()
   };
   try{
-    const response=await fetch(SUPABASE_URL+'/rest/v1/family_consents',{method:'POST',headers:{apikey:SUPABASE_KEY,Authorization:'Bearer '+SUPABASE_KEY,'Content-Type':'application/json',Prefer:'return=representation'},body:JSON.stringify(payload)});
-    const rows=await response.json();if(!response.ok){
+    const consentId=(crypto.randomUUID?crypto.randomUUID():'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0,v=c==='x'?r:(r&0x3|0x8);return v.toString(16)}));
+    payload.id=consentId;
+    const response=await fetch(SUPABASE_URL+'/rest/v1/family_consents',{method:'POST',headers:{apikey:SUPABASE_KEY,'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify(payload)});
+    if(!response.ok){
+      let rows={};try{rows=await response.json()}catch(_){}
       const detail=rows?.message||rows?.hint||rows?.details||'No se pudo registrar el consentimiento.';
       if(String(detail).toLowerCase().includes('row-level security')||String(detail).toLowerCase().includes('rls')){
-        throw new Error('Supabase bloqueó el registro por RLS. La tabla family_consents necesita una política INSERT para el rol anon.');
+        throw new Error('Supabase bloqueó el registro por RLS. Verificá la política INSERT pública de family_consents.');
       }
       throw new Error(detail);
     }
-    currentConsent=rows[0];$('consentForm').classList.add('hidden');$('photoStep').classList.remove('hidden');
+    currentConsent={...payload,id:consentId};$('consentForm').classList.add('hidden');$('photoStep').classList.remove('hidden');
     $('consentRecord').innerHTML='<strong>Consentimiento registrado</strong><br>ID: '+esc(currentConsent?.consent_code||currentConsent?.id||'registrado')+' · Versión: '+esc(currentConsent?.consent_version||c.version)+' · Fecha/hora: '+(currentConsent?.created_at?new Date(currentConsent.created_at).toLocaleString('es-AR'):'servidor')+'<br>Finalidades autorizadas: '+[['Registro',payload.purpose_event_record],['Difusión digital',payload.purpose_digital],['Institucional',payload.purpose_institutional],['Promocional',payload.purpose_promotional]].filter(x=>x[1]).map(x=>x[0]).join(', ')||'Ninguna de difusión';
   }catch(error){
     $('consentError').textContent='No se pudo registrar el consentimiento. No se cargó ninguna imagen. Detalle: '+(error?.message||'error desconocido');$('consentError').classList.add('show');$('acceptConsent').disabled=false;
@@ -193,7 +196,7 @@ function handleLetterFile(){
 $('sendLetter').onclick=async()=>{
   if(!letterFile)return;
   $('sendLetter').disabled=true;$('sendLetter').textContent='Enviando…';$('letterError').classList.remove('show');
-  const ext={'image/jpeg':'jpg','image/png':'png','image/webp':'webp'}[letterFile.type],id=crypto.randomUUID(),day=new Date().toISOString().slice(0,10),storagePath='letters/'+day+'/'+id+'.'+ext,encoded=storagePath.split('/').map(encodeURIComponent).join('/'),headers={apikey:SUPABASE_KEY,Authorization:'Bearer '+SUPABASE_KEY};
+  const ext={'image/jpeg':'jpg','image/png':'png','image/webp':'webp'}[letterFile.type],id=crypto.randomUUID(),day=new Date().toISOString().slice(0,10),storagePath='letters/'+day+'/'+id+'.'+ext,encoded=storagePath.split('/').map(encodeURIComponent).join('/'),headers={apikey:SUPABASE_KEY};
   try{
     const upload=await fetch(SUPABASE_URL+'/storage/v1/object/'+BUCKET+'/'+encoded,{method:'POST',headers:{...headers,'Content-Type':letterFile.type,'x-upsert':'false'},body:letterFile});
     if(!upload.ok){let detail='No se pudo guardar la carta en Storage.';try{const x=await upload.json();detail=x?.message||x?.error||detail}catch(_){}throw new Error(detail)}
@@ -205,7 +208,7 @@ $('sendLetter').onclick=async()=>{
 }
 
 function applySiteConfig(c){if(!c)return;config=merge(JSON.parse(JSON.stringify(defaults)),c);const g=config.general,h=config.history;[['brandName',g.siteName],['footerBrand',g.siteName],['cmsEyebrow',g.eyebrow],['cmsHeroTitle',g.heroTitle],['cmsHeroHighlight',g.heroHighlight],['cmsHeroText',g.heroText],['cmsCountTitle',g.countTitle],['cmsHistoryIntro1',h.intro1],['cmsHistoryIntro2',h.intro2],['cmsHistoryPhrase',h.phrase],['cmsChildrenGoal',h.childrenGoal],['cmsAdultGoal',h.adultGoal],['cmsLetterTitle',config.letters.title],['cmsLetterText',config.letters.text],['cmsUploadTitle',config.upload.title],['cmsUploadText',config.upload.text]].forEach(([id,v])=>{if($(id)&&v!=null)$(id).textContent=v});if(g.logoUrl)document.querySelectorAll('.mark').forEach(x=>x.innerHTML='<img src="'+esc(g.logoUrl)+'" alt="Logo">');if(g.bannerUrl)document.querySelector('.hero').style.backgroundImage='url("'+String(g.bannerUrl).replace(/["\\]/g,'')+'")';if(g.eventDate){const ev=new Date(/[zZ]|[+-]\d\d:\d\d$/.test(g.eventDate)?g.eventDate:g.eventDate+':00-03:00');if(!isNaN(ev))eventDate=ev}if(h.fullStory)$('cmsFullStory').innerHTML=h.fullStory.split(/\n\s*/).filter(Boolean).map(p=>'<p>'+esc(p)+'</p>').join('');$('cmsEvents').innerHTML=config.events.map(e=>'<article class="event '+(e.featured?'featured':'')+'"><div class="date"><b>'+esc(e.day)+'</b><span>'+esc(e.month)+'</span></div><div><h3>'+esc(e.title)+'</h3><p>'+esc(e.time)+(e.time&&e.place?' · ':'')+esc(e.place)+'</p></div></article>').join('');$('cmsSongs').innerHTML=config.songs.map((s,i)=>'<article class="song"><button type="button" '+(s.url?'onclick="window.open(\''+String(s.url).replace(/'/g,"%27")+'\',\'_blank\',\'noopener\')"':'')+'>▶</button><div><small>CANCIÓN '+(i+1)+'</small><h3>'+esc(s.title)+'</h3></div></article>').join('');for(const [k,v] of Object.entries(config.sections||{})){const sec=document.querySelector('[data-cms-section="'+k+'"]');if(sec)sec.style.display=v?'':'none'}renderConsentText()}
-async function loadSiteConfig(){try{const r=await fetch(SUPABASE_URL+'/rest/v1/npf_site_content?id=eq.1&select=data',{headers:{apikey:SUPABASE_KEY,Authorization:'Bearer '+SUPABASE_KEY}});if(r.ok){const rows=await r.json();if(rows[0]?.data)applySiteConfig(rows[0].data)}}catch(e){}}
+async function loadSiteConfig(){try{const r=await fetch(SUPABASE_URL+'/rest/v1/npf_site_content?id=eq.1&select=data',{headers:{apikey:SUPABASE_KEY}});if(r.ok){const rows=await r.json();if(rows[0]?.data)applySiteConfig(rows[0].data)}}catch(e){}}
 function tick(){const d=Math.max(0,eventDate-Date.now());$('days').textContent=String(Math.floor(d/86400000)).padStart(2,'0');$('hours').textContent=String(Math.floor(d/3600000)%24).padStart(2,'0');$('minutes').textContent=String(Math.floor(d/60000)%60).padStart(2,'0');$('seconds').textContent=String(Math.floor(d/1000)%60).padStart(2,'0')}tick();setInterval(tick,1000);
 $('qr').src='https://api.qrserver.com/v1/create-qr-code/?size=180x180&data='+encodeURIComponent(location.href.split('#')[0]+'#cargar-foto');
 applySiteConfig(config);
