@@ -157,7 +157,13 @@ $('acceptConsent').onclick=async()=>{
   };
   try{
     const response=await fetch(SUPABASE_URL+'/rest/v1/family_consents',{method:'POST',headers:{apikey:SUPABASE_KEY,Authorization:'Bearer '+SUPABASE_KEY,'Content-Type':'application/json',Prefer:'return=representation'},body:JSON.stringify(payload)});
-    const rows=await response.json();if(!response.ok)throw new Error(rows?.message||rows?.hint||'No se pudo registrar el consentimiento.');
+    const rows=await response.json();if(!response.ok){
+      const detail=rows?.message||rows?.hint||rows?.details||'No se pudo registrar el consentimiento.';
+      if(String(detail).toLowerCase().includes('row-level security')||String(detail).toLowerCase().includes('rls')){
+        throw new Error('Supabase bloqueó el registro por RLS. La tabla family_consents necesita una política INSERT para el rol anon.');
+      }
+      throw new Error(detail);
+    }
     currentConsent=rows[0];$('consentForm').classList.add('hidden');$('photoStep').classList.remove('hidden');
     $('consentRecord').innerHTML='<strong>Consentimiento registrado</strong><br>ID: '+esc(currentConsent?.consent_code||currentConsent?.id||'registrado')+' · Versión: '+esc(currentConsent?.consent_version||c.version)+' · Fecha/hora: '+(currentConsent?.created_at?new Date(currentConsent.created_at).toLocaleString('es-AR'):'servidor')+'<br>Finalidades autorizadas: '+[['Registro',payload.purpose_event_record],['Difusión digital',payload.purpose_digital],['Institucional',payload.purpose_institutional],['Promocional',payload.purpose_promotional]].filter(x=>x[1]).map(x=>x[0]).join(', ')||'Ninguna de difusión';
   }catch(error){
